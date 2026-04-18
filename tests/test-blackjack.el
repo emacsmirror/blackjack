@@ -699,13 +699,17 @@
               (expect (blackjack--all-bets game) :to-be 1500)))
 
 (describe "blackjack--insure-hand"
-          :var ((game (blackjack-game))
-                (player-hand (blackjack-player-hand :bet 500)))
+          :var (game player-hand dealer-hand)
 
           (before-each
+           (setq game (blackjack-game)
+                 player-hand (blackjack-player-hand :bet 500 :cards (list card-T card-7))
+                 dealer-hand (blackjack-dealer-hand))
            (spy-on 'blackjack--draw-hands)
            (spy-on 'blackjack--ask-game-action)
-           (setf (slot-value game 'player-hands) (list player-hand)))
+           (spy-on 'blackjack--ask-hand-action)
+           (setf (slot-value game 'player-hands) (list player-hand))
+           (setf (slot-value game 'dealer-hand) dealer-hand))
 
           (it "returns nil unless menu is 'insurance"
               (expect (blackjack--insure-hand game) :to-be nil))
@@ -715,14 +719,44 @@
                     (before-each
                      (setf (slot-value game 'current-menu) 'insurance))
 
-                    (it "surrender half of hand bet"
-                        (blackjack--insure-hand game)
-                        (expect (slot-value player-hand 'bet) :to-be 250)
-                        (expect (slot-value player-hand 'paid) :to-be t)
-                        (expect (slot-value player-hand 'played) :to-be t)
-                        (expect (slot-value player-hand 'status) :to-be 'lost)
-                        (expect (slot-value game 'money) :to-be 9750)
-                        (expect (slot-value game 'current-menu) :to-be 'game))))
+                    (describe "when dealer has blackjack"
+                              (before-each
+                               (setf (slot-value dealer-hand 'cards) (list card-A card-T))
+                               (setf (slot-value dealer-hand 'hide-down-card) t))
+
+                              (it "reveals down card, loses main hand, net money unchanged"
+                                  (blackjack--insure-hand game)
+                                  (expect (slot-value player-hand 'bet) :to-be 500)
+                                  (expect (slot-value player-hand 'paid) :to-be t)
+                                  (expect (slot-value player-hand 'played) :to-be t)
+                                  (expect (slot-value player-hand 'status) :to-be 'lost)
+                                  (expect (slot-value dealer-hand 'hide-down-card) :to-be nil)
+                                  (expect (slot-value game 'money) :to-be 10000)
+                                  (expect (slot-value game 'current-menu) :to-be 'game)))
+
+                    (describe "when dealer does not have blackjack"
+                              (before-each
+                               (setf (slot-value dealer-hand 'cards) (list card-A card-4)))
+
+                              (describe "when player hand is not done"
+                                        (it "loses only half-bet insurance and keeps playing main hand"
+                                            (blackjack--insure-hand game)
+                                            (expect (slot-value player-hand 'bet) :to-be 500)
+                                            (expect (slot-value player-hand 'paid) :to-be nil)
+                                            (expect (slot-value player-hand 'played) :to-be nil)
+                                            (expect (slot-value game 'money) :to-be 9750)
+                                            (expect (slot-value game 'current-menu) :to-be 'hand)
+                                            (expect 'blackjack--ask-hand-action :to-have-been-called)))
+
+                              (describe "when player hand is done"
+                                        (before-each
+                                         (spy-on 'blackjack--play-dealer-hand)
+                                         (spy-on 'blackjack--player-hand-done-p :and-return-value t))
+
+                                        (it "loses half-bet insurance and plays dealer hand"
+                                            (blackjack--insure-hand game)
+                                            (expect (slot-value game 'money) :to-be 9750)
+                                            (expect 'blackjack--play-dealer-hand :to-have-been-called))))))
 
 (describe "blackjack--no-insurance"
           :var ((game (blackjack-game))

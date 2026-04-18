@@ -1,9 +1,9 @@
 ;;; blackjack.el --- The game of Blackjack -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2022, 2023 Greg Donald
+;; Copyright (C) 2022 - 2026 Greg Donald
 ;; SPDX-License-Identifier: GPL-3.0-only
 ;; Author: Greg Donald <gdonald@gmail.com>
-;; Version: 1.0.3
+;; Version: 1.0.4
 ;; Package-Requires: ((emacs "26.2"))
 ;; Keywords: card game games blackjack 21
 ;; URL: https://github.com/gdonald/blackjack-el
@@ -601,16 +601,25 @@ Can be a single-character currency symbol such as \"$\", \"€\" or \"£\", or a
   "Insure the current GAME player hand."
   (interactive)
   (when (blackjack--valid-menu-action-p game 'insurance)
-    (with-slots (money current-menu) game
-      (with-slots (bet played paid status) (blackjack--current-player-hand game)
-        (cl-callf / bet 2)
-        (setf played t
-              paid t
-              status 'lost)
-        (cl-decf money bet))
-      (setf current-menu 'game)
-      (blackjack--draw-hands game)
-      (blackjack--ask-game-action game))))
+    (with-slots (dealer-hand money current-menu) game
+      (with-slots ((dealer-cards cards) hide-down-card) dealer-hand
+        (let ((player-hand (blackjack--current-player-hand game)))
+          (if (blackjack--hand-is-blackjack-p dealer-cards)
+              (progn
+                (setf hide-down-card nil)
+                (with-slots (played paid status) player-hand
+                  (setf played t
+                        paid t
+                        status 'lost))
+                (setf current-menu 'game)
+                (blackjack--draw-hands game)
+                (blackjack--ask-game-action game))
+            (cl-decf money (/ (slot-value player-hand 'bet) 2))
+            (if (blackjack--player-hand-done-p game player-hand)
+                (blackjack--play-dealer-hand game)
+              (setf current-menu 'hand)
+              (blackjack--draw-hands game)
+              (blackjack--ask-hand-action game))))))))
 
 (defun blackjack--no-insurance (game)
   "Decline GAME player hand insurance."
